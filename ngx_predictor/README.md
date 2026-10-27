@@ -14,6 +14,8 @@ Download from <https://ngxgroup.com/exchange/data/data-library/>:
 - **Daily price lists** (CSV or XLSX), as many days as you can get; two or more years is recommended. Put them all in one folder, e.g. `data/prices/`. If a file has no date column, the date is read from its name (e.g. `PriceList_2025-03-14.csv`).
 - **Corporate actions / dividends.** Use one file with the symbol, the announcement (declaration) date, the qualification (closure) date, the payment date and the dividend per share. Save it as `data/dividends.csv`.
 
+**Alternative: Investing.com.** On each stock's *Historical Data* page (e.g. `ng.investing.com/equities/dangote-cement-historical-data`), set a long date range, click **Download Data** (needs a free account), and save the CSVs in `data/prices/`. The share symbol is taken from the file name (`DANGCEM Historical Data.csv` becomes `DANGCEM`), so rename files if you want different symbols. Its MM/DD dates, `1.25M`-style volumes and missing turnover column are handled automatically. The NSE All-Share Index page is the whole market, not a share, so don't put it in the prices folder.
+
 Common NGX column names (`Company / Symbol`, `PClose`, `Close`, `Volume`, `Value`, `Deals`, `Qualification Date`, `Dividend (N)` and so on) are recognised automatically. See the aliases in `data_loader.py` to add others.
 
 ## 2. Run

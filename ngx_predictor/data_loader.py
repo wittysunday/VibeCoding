@@ -25,7 +25,7 @@ PRICE_ALIASES = {
     "low": ["low", "low price", "day low"],
     "close": ["close", "closing price", "close price", "last", "price"],
     "prev_close": ["pclose", "previous close", "prev close", "previous closing price"],
-    "volume": ["volume", "vol", "deals volume", "quantity traded"],
+    "volume": ["volume", "vol", "vol.", "deals volume", "quantity traded"],
     "value": ["value", "turnover", "value traded", "value (n)"],
     "trades": ["trades", "deals", "no of deals", "number of deals"],
 }
@@ -74,9 +74,27 @@ def _date_from_filename(path: Path):
     return pd.NaT
 
 
+def _symbol_from_filename(path: Path) -> str:
+    """Investing.com exports are named like 'DANGCEM Historical Data.csv'."""
+    return re.sub(r"\s*(stock price history|historical data)(\s*\(\d+\))?$", "", path.stem, flags=re.I).strip()
+
+
+def _parse_dates(series: pd.Series) -> pd.Series:
+    """Parse one file's dates, telling DD/MM from MM/DD (Investing.com uses MM/DD)."""
+    s = series.astype(str).str.strip()
+    parts = s.str.extract(r"^(\d{1,2})[/.-](\d{1,2})[/.-]\d{2,4}")
+    if parts.notna().all(axis=None) and len(parts):
+        first, second = parts[0].astype(int), parts[1].astype(int)
+        if (second > 12).any() and not (first > 12).any():
+            return pd.to_datetime(s, errors="coerce", dayfirst=False)
+    return pd.to_datetime(s, errors="coerce", dayfirst=True)
+
+
 def _to_number(series: pd.Series) -> pd.Series:
-    cleaned = series.astype(str).str.replace(r"[,\sN₦]", "", regex=True)
-    return pd.to_numeric(cleaned, errors="coerce")
+    cleaned = series.astype(str).str.replace(r"[,\sN₦%]", "", regex=True).str.upper()
+    scale = cleaned.str[-1].map({"K": 1e3, "M": 1e6, "B": 1e9}).fillna(1.0)
+    cleaned = cleaned.where(scale == 1.0, cleaned.str[:-1])
+    return pd.to_numeric(cleaned, errors="coerce") * scale
 
 
 def load_prices(source: str | Path) -> pd.DataFrame:
@@ -91,6 +109,10 @@ def load_prices(source: str | Path) -> pd.DataFrame:
         df = _rename(_read_any(f), PRICE_ALIASES)
         if "date" not in df.columns:
             df["date"] = _date_from_filename(f)
+        else:
+            df["date"] = _parse_dates(df["date"])
+        if "symbol" not in df.columns:
+            df["symbol"] = _symbol_from_filename(f)
         frames.append(df)
     df = pd.concat(frames, ignore_index=True)
 
@@ -98,7 +120,6 @@ def load_prices(source: str | Path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Price data is missing required columns: {sorted(missing)}")
 
-    df["date"] = pd.to_datetime(df["date"], errors="coerce", dayfirst=True)
     df["symbol"] = df["symbol"].astype(str).str.strip().str.upper()
     for col in ["open", "high", "low", "close", "prev_close", "volume", "value", "trades"]:
         if col in df.columns:
@@ -113,6 +134,8 @@ def load_prices(source: str | Path) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = 0.0
         df[col] = df[col].fillna(0.0)
+    # Investing.com exports have no turnover column; estimate it from price x volume.
+    df["value"] = df["value"].where(df["value"] > 0, df["close"] * df["volume"])
 
     df = df.dropna(subset=["date", "close"])
     df = df[df["close"] > 0]
